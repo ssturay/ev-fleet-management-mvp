@@ -1,31 +1,64 @@
 import streamlit as st
 import pandas as pd
-import random
 import folium
 from streamlit_folium import st_folium
 
 st.set_page_config(layout="wide")
-
 st.title("EV Fleet Management – Live MVP Demo (Freetown)")
 
 # -----------------------------
-# Simulated Fleet Data
+# INITIALIZE FLEET (RUN ONCE)
 # -----------------------------
-fleet = [
-    {"id": "EV-01", "service": "Ride-Hailing", "battery": random.randint(30, 90), "lat": 8.484, "lon": -13.234},
-    {"id": "EV-02", "service": "Airport Shuttle", "battery": random.randint(20, 80), "lat": 8.470, "lon": -13.210},
-    {"id": "EV-03", "service": "School Transport", "battery": random.randint(40, 100), "lat": 8.460, "lon": -13.250},
-    {"id": "EV-04", "service": "Corporate Hire", "battery": random.randint(25, 75), "lat": 8.490, "lon": -13.260},
-]
+if "fleet" not in st.session_state:
+    st.session_state.fleet = pd.DataFrame([
+        {"id": "EV-01", "service": "Ride-Hailing", "battery": 72, "status": "Idle", "lat": 8.484, "lon": -13.234},
+        {"id": "EV-02", "service": "Airport Shuttle", "battery": 38, "status": "Idle", "lat": 8.470, "lon": -13.210},
+        {"id": "EV-03", "service": "School Transport", "battery": 55, "status": "Idle", "lat": 8.460, "lon": -13.250},
+        {"id": "EV-04", "service": "Corporate Hire", "battery": 18, "status": "Idle", "lat": 8.490, "lon": -13.260},
+    ])
 
-df = pd.DataFrame(fleet)
+fleet = st.session_state.fleet
 
 # -----------------------------
-# Sidebar Controls
+# SIDEBAR CONTROLS
 # -----------------------------
 st.sidebar.header("Fleet Controls")
-min_battery = st.sidebar.slider("Minimum Battery Filter (%)", 0, 100, 20)
-service_filter = st.sidebar.selectbox("Service Type", ["All"] + list(df["service"].unique()))
+
+service_filter = st.sidebar.selectbox(
+    "Service Type",
+    ["All"] + list(fleet["service"].unique())
+)
+
+min_battery = st.sidebar.slider("Minimum Battery (%)", 0, 100, 20)
+
+# -----------------------------
+# CHARGING CONTROL
+# -----------------------------
+st.sidebar.header("Charging Control")
+
+selected_ev = st.sidebar.selectbox(
+    "Select EV to Charge",
+    fleet["id"]
+)
+
+if st.sidebar.button("Start Charging"):
+    idx = fleet[fleet["id"] == selected_ev].index[0]
+    fleet.loc[idx, "status"] = "Charging"
+
+if st.sidebar.button("Simulate 10% Charge Increase"):
+    idx = fleet[fleet["id"] == selected_ev].index[0]
+    if fleet.loc[idx, "battery"] < 100:
+        fleet.loc[idx, "battery"] += 10
+        fleet.loc[idx, "status"] = "Charging"
+
+if st.sidebar.button("Stop Charging"):
+    idx = fleet[fleet["id"] == selected_ev].index[0]
+    fleet.loc[idx, "status"] = "Idle"
+
+# -----------------------------
+# FILTER DATA
+# -----------------------------
+df = fleet.copy()
 
 if service_filter != "All":
     df = df[df["service"] == service_filter]
@@ -33,19 +66,26 @@ if service_filter != "All":
 df = df[df["battery"] >= min_battery]
 
 # -----------------------------
-# Map View
+# MAP VIEW
 # -----------------------------
 st.subheader("Live Fleet Map – Freetown")
 
 m = folium.Map(location=[8.48, -13.23], zoom_start=12)
 
 for _, ev in df.iterrows():
-    color = "green" if ev["battery"] > 40 else "red"
+    if ev["status"] == "Charging":
+        color = "blue"
+    elif ev["battery"] > 40:
+        color = "green"
+    else:
+        color = "red"
+
     folium.Marker(
         [ev["lat"], ev["lon"]],
         popup=f"""
         <b>{ev['id']}</b><br>
         Service: {ev['service']}<br>
+        Status: {ev['status']}<br>
         Battery: {ev['battery']}%
         """,
         icon=folium.Icon(color=color, icon="bolt", prefix="fa"),
@@ -54,21 +94,20 @@ for _, ev in df.iterrows():
 st_folium(m, width=1100, height=500)
 
 # -----------------------------
-# Fleet Table
+# FLEET TABLE
 # -----------------------------
 st.subheader("Fleet Status Table")
 st.dataframe(df, use_container_width=True)
 
 # -----------------------------
-# Logic Simulation Explanation
+# EXPLANATION
 # -----------------------------
-st.info("""
-This live demo simulates:
-- Real-time EV location tracking
-- Battery health monitoring
-- Service-based fleet segmentation
-- Dispatch decision support
+st.success("""
+Live demo features:
+• Stable fleet visualization (no blinking)
+• Manual charging simulation
+• Battery-based alerts
+• Service-based filtering
 
-Backend logic mirrors the Node.js + Prisma architecture.
+This mirrors production EV fleet operations.
 """)
-
