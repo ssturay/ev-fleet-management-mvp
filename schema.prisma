@@ -1,0 +1,20 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Vehicle {
+  id              String   @id @default(uuid())
+  vehicle_code    String
+  service_type    String
+  battery_percent Int
+  latitude        Float
+  longitude       Float
+  status          String
+  created_at      DateTime @default(now())
+}
