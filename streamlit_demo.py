@@ -20,6 +20,34 @@ if "fleet" not in st.session_state:
 fleet = st.session_state.fleet
 
 # -----------------------------
+# INITIALIZE CHARGING STATIONS
+# -----------------------------
+if "stations" not in st.session_state:
+    st.session_state.stations = pd.DataFrame([
+        {
+            "id": "CS-01",
+            "name": "Aberdeen Charging Hub",
+            "lat": 8.495,
+            "lon": -13.293,
+            "capacity": 4
+        },
+        {
+            "id": "CS-02",
+            "name": "CBD Charging Point",
+            "lat": 8.484,
+            "lon": -13.231,
+            "capacity": 3
+        },
+        {
+            "id": "CS-03",
+            "name": "Lumley Beach Station",
+            "lat": 8.500,
+            "lon": -13.280,
+            "capacity": 2
+        },
+    ])
+
+# -----------------------------
 # SIDEBAR CONTROLS
 # -----------------------------
 st.sidebar.header("Fleet Controls")
