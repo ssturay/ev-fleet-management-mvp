@@ -10,7 +10,7 @@ from datetime import datetime
 # CONFIG
 # --------------------------------------------------
 st.set_page_config(layout="wide")
-st.title("NeeV Salone EV Fleet Management Platform – Live Business Operations")
+st.title("NeeV Salone EV Fleet Management Platform (Live Business Operations & Analytics)")
 
 ENERGY_COST_PER_KWH = 0.25
 BATTERY_CAPACITY_KWH = 60
