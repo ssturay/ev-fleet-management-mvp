@@ -4,6 +4,7 @@ import folium
 import math
 import random
 from streamlit_folium import st_folium
+from datetime import datetime
 
 # --------------------------------------------------
 # CONFIG
@@ -46,11 +47,11 @@ def move_towards(lat, lon, tlat, tlon, step=0.001):
     return lat, lon
 
 # --------------------------------------------------
-# RESET
+# SYSTEM RESET
 # --------------------------------------------------
 st.sidebar.header("System Controls")
 if st.sidebar.button("🔄 Reset Fleet"):
-    for k in ["fleet","drivers","stations","energy_log"]:
+    for k in ["fleet","drivers","stations","energy_log","revenue_log"]:
         st.session_state.pop(k, None)
     st.rerun()
 
@@ -92,6 +93,9 @@ if "stations" not in st.session_state:
 if "energy_log" not in st.session_state:
     st.session_state.energy_log = []
 
+if "revenue_log" not in st.session_state:
+    st.session_state.revenue_log = []
+
 fleet = st.session_state.fleet
 drivers = st.session_state.drivers
 stations = st.session_state.stations
@@ -114,14 +118,18 @@ if st.sidebar.button("Assign Driver") and selected_driver != "None":
 # SIMULATION STEP
 # --------------------------------------------------
 if st.sidebar.button("▶ Simulate 1 Minute"):
+    minute_revenue = 0
+    energy_added = 0
+
     for i, ev in fleet.iterrows():
 
         if ev.status == "Active":
             drain = 1.5 if ev.service in ["Daily Rentals","Tourism Shuttle"] else 1
             fleet.loc[i, "battery"] -= drain
-
             rate = SERVICE_RATES[ev.service]
-            fleet.loc[i, "revenue"] += rate / (24*60) if ev.service=="Daily Rentals" else rate
+            earned = rate/(24*60) if ev.service=="Daily Rentals" else rate
+            fleet.loc[i, "revenue"] += earned
+            minute_revenue += earned
 
         if fleet.loc[i,"battery"] < 20 and ev.status not in ["Charging","Moving to Charge"]:
             nearest = min(stations.itertuples(), key=lambda s: distance(ev.lat, ev.lon, s.lat, s.lon))
@@ -136,9 +144,15 @@ if st.sidebar.button("▶ Simulate 1 Minute"):
 
         if ev.status == "Charging":
             fleet.loc[i, "battery"] += 2
-            st.session_state.energy_log.append(2/100 * BATTERY_CAPACITY_KWH)
+            energy_added += 2/100 * BATTERY_CAPACITY_KWH
             if fleet.loc[i, "battery"] >= 100:
                 fleet.loc[i, ["battery","status","station"]] = [100,"Idle",None]
+
+    st.session_state.energy_log.append(energy_added)
+    st.session_state.revenue_log.append({
+        "time": datetime.now(),
+        "revenue": minute_revenue
+    })
 
 # --------------------------------------------------
 # TABS
@@ -148,9 +162,14 @@ tab1, tab2, tab3 = st.tabs(["🚗 Live Operations", "🔌 Charging & Drivers", "
 # ---------------- MAP ----------------
 with tab1:
     m = folium.Map(location=[8.48, -13.23], zoom_start=12)
+
     for s in stations.itertuples():
-        folium.Marker([s.lat,s.lon],popup=s.name,
-            icon=folium.Icon(color="purple",icon="flash",prefix="fa")).add_to(m)
+        charging_count = len(fleet[(fleet.station==s.id) & (fleet.status=="Charging")])
+        folium.Marker(
+            [s.lat,s.lon],
+            popup=f"{s.name}<br>Charging: {charging_count}/{s.capacity}",
+            icon=folium.Icon(color="purple",icon="flash",prefix="fa")
+        ).add_to(m)
 
     for ev in fleet.itertuples():
         color = "green"
@@ -160,7 +179,7 @@ with tab1:
 
         folium.Marker(
             [ev.lat,ev.lon],
-            popup=f"{ev.id}<br>{ev.service}<br>{ev.status}<br>Battery: {ev.battery:.0f}%",
+            popup=f"{ev.id}<br>{ev.service}<br>{ev.status}<br>Battery {ev.battery:.0f}%",
             icon=folium.Icon(color=color,icon="bolt",prefix="fa")
         ).add_to(m)
 
@@ -172,7 +191,7 @@ with tab2:
     st.dataframe(drivers, use_container_width=True)
     st.dataframe(stations, use_container_width=True)
 
-# ---------------- ANALYTICS + LIVE CHARTS ----------------
+# ---------------- ANALYTICS ----------------
 with tab3:
     total_energy = sum(st.session_state.energy_log)
     total_cost = total_energy * ENERGY_COST_PER_KWH
@@ -184,21 +203,24 @@ with tab3:
     c3.metric("Active EVs", len(fleet[fleet.status=="Active"]))
     c4.metric("Revenue ($)", f"{total_revenue:.2f}")
 
-    # ---------- BATTERY DISTRIBUTION ----------
-    st.subheader("🔋 Battery Level Distribution")
-    st.bar_chart(fleet["battery"].value_counts().sort_index())
+    st.subheader("📈 Revenue Over Time")
+    rev_df = pd.DataFrame(st.session_state.revenue_log)
+    if not rev_df.empty:
+        st.line_chart(rev_df.set_index("time"))
 
-    # ---------- REVENUE BY SERVICE ----------
-    st.subheader("💰 Revenue by Service")
-    revenue_by_service = fleet.groupby("service")["revenue"].sum()
-    st.bar_chart(revenue_by_service)
+    st.subheader("🔌 Charging Station Utilization")
+    station_load = fleet[fleet.status=="Charging"].station.value_counts()
+    st.bar_chart(station_load)
 
-    # ---------- UTILIZATION ----------
-    st.subheader("🚗 Fleet Utilization")
-    utilization = fleet["status"].value_counts()
-    st.bar_chart(utilization)
+    st.subheader("💰 Service Profitability Ranking")
+    service_profit = fleet.groupby("service")["revenue"].sum().sort_values(ascending=False)
+    st.bar_chart(service_profit)
+
+    st.subheader("📤 Export Data")
+    st.download_button("Download Fleet CSV", fleet.to_csv(index=False), "fleet.csv")
+    st.download_button("Download Revenue CSV", service_profit.to_csv(), "service_revenue.csv")
 
     st.metric("Energy Cost ($)", f"{total_cost:.2f}")
     st.metric("Net Margin ($)", f"{total_revenue-total_cost:.2f}")
 
-    st.success("Live operational intelligence: batteries, revenue, utilization, charging.")
+    st.success("Enterprise-grade EV fleet intelligence with live analytics & exports.")
