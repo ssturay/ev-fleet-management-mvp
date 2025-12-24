@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 import math
+import random
 from streamlit_folium import st_folium
 
 # --------------------------------------------------
@@ -14,12 +15,21 @@ ENERGY_COST_PER_KWH = 0.25
 BATTERY_CAPACITY_KWH = 60
 
 SERVICE_RATES = {
-    "Ride-Hailing": 2.5,        # $ per minute
+    "Ride-Hailing": 2.5,
     "Airport Shuttle": 3.0,
     "School Transport": 1.5,
     "Corporate Hire": 2.0,
-    "Daily Rentals": 40.0,      # $ per day (simulated per minute)
+    "Daily Rentals": 40.0,
     "Tourism Shuttle": 3.5
+}
+
+SERVICE_FLEET_SIZE = {
+    "Ride-Hailing": 9,
+    "Airport Shuttle": 9,
+    "School Transport": 5,
+    "Corporate Hire": 9,
+    "Daily Rentals": 9,
+    "Tourism Shuttle": 9
 }
 
 # --------------------------------------------------
@@ -39,23 +49,30 @@ def move_towards(lat, lon, tlat, tlon, step=0.001):
 # INITIALIZE STATE
 # --------------------------------------------------
 if "fleet" not in st.session_state:
-    st.session_state.fleet = pd.DataFrame([
-        {"id":"EV-01","service":"Ride-Hailing","battery":72,"status":"Idle","lat":8.484,"lon":-13.234,"station":None,"driver":None,"revenue":0},
-        {"id":"EV-02","service":"Airport Shuttle","battery":38,"status":"Idle","lat":8.470,"lon":-13.210,"station":None,"driver":None,"revenue":0},
-        {"id":"EV-03","service":"School Transport","battery":55,"status":"Active","lat":8.460,"lon":-13.250,"station":None,"driver":"DRV-03","revenue":0},
-        {"id":"EV-04","service":"Corporate Hire","battery":18,"status":"Idle","lat":8.490,"lon":-13.260,"station":None,"driver":None,"revenue":0},
-        {"id":"EV-05","service":"Daily Rentals","battery":80,"status":"Active","lat":8.475,"lon":-13.245,"station":None,"driver":"DRV-05","revenue":0},
-        {"id":"EV-06","service":"Tourism Shuttle","battery":65,"status":"Active","lat":8.505,"lon":-13.275,"station":None,"driver":"DRV-06","revenue":0},
-    ])
+    fleet_data = []
+    ev_id = 1
+
+    for service, count in SERVICE_FLEET_SIZE.items():
+        for _ in range(count):
+            fleet_data.append({
+                "id": f"EV-{ev_id:02d}",
+                "service": service,
+                "battery": random.randint(40, 90),
+                "status": "Idle",
+                "lat": 8.45 + random.uniform(-0.05, 0.05),
+                "lon": -13.25 + random.uniform(-0.05, 0.05),
+                "station": None,
+                "driver": None,
+                "revenue": 0
+            })
+            ev_id += 1
+
+    st.session_state.fleet = pd.DataFrame(fleet_data)
 
 if "drivers" not in st.session_state:
     st.session_state.drivers = pd.DataFrame([
-        {"id":"DRV-01","name":"Driver A","status":"Available"},
-        {"id":"DRV-02","name":"Driver B","status":"Available"},
-        {"id":"DRV-03","name":"Driver C","status":"Assigned"},
-        {"id":"DRV-04","name":"Driver D","status":"Available"},
-        {"id":"DRV-05","name":"Driver E","status":"Assigned"},
-        {"id":"DRV-06","name":"Driver F","status":"Assigned"},
+        {"id": f"DRV-{i:02d}", "name": f"Driver {i}", "status": "Available"}
+        for i in range(1, 61)
     ])
 
 if "stations" not in st.session_state:
@@ -73,54 +90,47 @@ drivers = st.session_state.drivers
 stations = st.session_state.stations
 
 # --------------------------------------------------
-# SIDEBAR – CONTROL PANEL
+# SIDEBAR CONTROLS
 # --------------------------------------------------
 st.sidebar.header("Simulation Engine")
 
 selected_ev = st.sidebar.selectbox("Select EV", fleet["id"])
-
 available_drivers = drivers[drivers.status=="Available"]["id"].tolist()
 
-if available_drivers:
-    selected_driver = st.sidebar.selectbox("Assign Driver", available_drivers)
-else:
-    selected_driver = None
-    st.sidebar.info("No drivers available")
+selected_driver = st.sidebar.selectbox(
+    "Assign Driver",
+    available_drivers if available_drivers else ["None"]
+)
 
-if st.sidebar.button("Assign Driver to EV") and selected_driver:
-    ev_idx = fleet[fleet.id == selected_ev].index[0]
-    drv_idx = drivers[drivers.id == selected_driver].index[0]
-    fleet.loc[ev_idx, "driver"] = selected_driver
-    fleet.loc[ev_idx, "status"] = "Active"
-    drivers.loc[drv_idx, "status"] = "Assigned"
+if st.sidebar.button("Assign Driver"):
+    if selected_driver != "None":
+        ev_idx = fleet[fleet.id == selected_ev].index[0]
+        drv_idx = drivers[drivers.id == selected_driver].index[0]
+        fleet.loc[ev_idx, ["driver","status"]] = [selected_driver, "Active"]
+        drivers.loc[drv_idx, "status"] = "Assigned"
 
-if st.sidebar.button("Simulate 1 Minute of Operations"):
+# --------------------------------------------------
+# SIMULATION STEP
+# --------------------------------------------------
+if st.sidebar.button("Simulate 1 Minute"):
     for i, ev in fleet.iterrows():
 
-        # ACTIVE VEHICLE OPERATIONS
         if ev.status == "Active":
-            drain = 1
-            if ev.service in ["Daily Rentals", "Tourism Shuttle"]:
-                drain = 1.5
+            drain = 1.5 if ev.service in ["Daily Rentals","Tourism Shuttle"] else 1
             fleet.loc[i, "battery"] -= drain
 
-            # Revenue logic
             rate = SERVICE_RATES[ev.service]
-            if ev.service == "Daily Rentals":
-                fleet.loc[i, "revenue"] += rate / (24*60)
-            else:
-                fleet.loc[i, "revenue"] += rate
+            fleet.loc[i, "revenue"] += (
+                rate / (24*60) if ev.service == "Daily Rentals" else rate
+            )
 
-        # AUTO SEND TO CHARGING
-        if fleet.loc[i, "battery"] < 20 and ev.status != "Charging":
+        if fleet.loc[i,"battery"] < 20 and ev.status not in ["Charging","Moving to Charge"]:
             nearest = min(
                 stations.itertuples(),
                 key=lambda s: distance(ev.lat, ev.lon, s.lat, s.lon)
             )
-            fleet.loc[i, "station"] = nearest.id
-            fleet.loc[i, "status"] = "Moving to Charge"
+            fleet.loc[i, ["station","status"]] = [nearest.id, "Moving to Charge"]
 
-        # MOVE TO CHARGER
         if ev.status == "Moving to Charge":
             stn = stations[stations.id == ev.station].iloc[0]
             lat, lon = move_towards(ev.lat, ev.lon, stn.lat, stn.lon)
@@ -128,30 +138,24 @@ if st.sidebar.button("Simulate 1 Minute of Operations"):
             if lat == stn.lat and lon == stn.lon:
                 fleet.loc[i, "status"] = "Charging"
 
-        # CHARGING
         if ev.status == "Charging":
             fleet.loc[i, "battery"] += 2
-            st.session_state.energy_log.append((2/100)*BATTERY_CAPACITY_KWH)
+            st.session_state.energy_log.append(2/100 * BATTERY_CAPACITY_KWH)
             if fleet.loc[i, "battery"] >= 100:
                 fleet.loc[i, "battery"] = 100
-                fleet.loc[i, "status"] = "Idle"
-                fleet.loc[i, "station"] = None
+                fleet.loc[i, ["status","station"]] = ["Idle", None]
 
 # --------------------------------------------------
 # TABS
 # --------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["🚗 Live Operations", "🔌 Charging & Drivers", "💰 Analytics"])
 
-# ---------------- MAP ----------------
 with tab1:
     m = folium.Map(location=[8.48, -13.23], zoom_start=12)
 
     for s in stations.itertuples():
-        folium.Marker(
-            [s.lat, s.lon],
-            popup=s.name,
-            icon=folium.Icon(color="purple", icon="flash", prefix="fa")
-        ).add_to(m)
+        folium.Marker([s.lat,s.lon],popup=s.name,
+            icon=folium.Icon(color="purple",icon="flash",prefix="fa")).add_to(m)
 
     for ev in fleet.itertuples():
         color = "green"
@@ -160,32 +164,24 @@ with tab1:
         if ev.battery < 20: color = "red"
 
         folium.Marker(
-            [ev.lat, ev.lon],
+            [ev.lat,ev.lon],
             popup=f"""
             <b>{ev.id}</b><br>
             {ev.service}<br>
             Status: {ev.status}<br>
             Battery: {ev.battery:.0f}%<br>
-            Driver: {ev.driver}<br>
             Revenue: ${ev.revenue:.2f}
             """,
-            icon=folium.Icon(color=color, icon="bolt", prefix="fa")
+            icon=folium.Icon(color=color,icon="bolt",prefix="fa")
         ).add_to(m)
 
     st_folium(m, width=1100, height=500)
 
-# ---------------- CHARGING & DRIVERS ----------------
 with tab2:
-    st.subheader("Fleet")
     st.dataframe(fleet, use_container_width=True)
-
-    st.subheader("Drivers")
     st.dataframe(drivers, use_container_width=True)
-
-    st.subheader("Charging Stations")
     st.dataframe(stations, use_container_width=True)
 
-# ---------------- ANALYTICS ----------------
 with tab3:
     total_energy = sum(st.session_state.energy_log)
     total_cost = total_energy * ENERGY_COST_PER_KWH
@@ -198,8 +194,6 @@ with tab3:
     c4.metric("Total Revenue ($)", f"{total_revenue:.2f}")
 
     st.metric("Energy Cost ($)", f"{total_cost:.2f}")
-    st.metric("Net Operating Margin ($)", f"{total_revenue-total_cost:.2f}")
+    st.metric("Net Margin ($)", f"{total_revenue-total_cost:.2f}")
 
-    st.success(
-        "This MVP demonstrates full EV fleet operations: dispatch, drivers, charging, and revenue."
-    )
+    st.success("50-EV fleet operating across six commercial services with live charging, drivers, and analytics.")
