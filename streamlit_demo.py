@@ -8,7 +8,7 @@ from streamlit_folium import st_folium
 # CONFIG
 # --------------------------------------------------
 st.set_page_config(layout="wide")
-st.title("EV Fleet Management Platform – Live Business Operations Demo")
+st.title("NeeV Salone EV Fleet Management Platform – Live Business Operations")
 
 ENERGY_COST_PER_KWH = 0.25
 BATTERY_CAPACITY_KWH = 60
