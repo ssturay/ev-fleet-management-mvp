@@ -85,7 +85,7 @@ if "drivers" not in st.session_state:
 
 if "stations" not in st.session_state:
     st.session_state.stations = pd.DataFrame([
-        {"id":"CS-01","name":"Aberdeen Hub","lat":8.495,"lon":-13.293,"capacity":4},
+        {"id":"CS-01","name":"Aberdeen Hub","lat":8.495,"lon":-13.293,"capacity":5},
         {"id":"CS-02","name":"CBD Station","lat":8.484,"lon":-13.231,"capacity":3},
         {"id":"CS-03","name":"Lumley Beach","lat":8.500,"lon":-13.280,"capacity":2},
     ])
