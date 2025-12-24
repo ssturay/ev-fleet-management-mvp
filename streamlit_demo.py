@@ -45,6 +45,16 @@ def move_towards(lat, lon, tlat, tlon, step=0.001):
     lon += step if lon < tlon else -step
     return lat, lon
 
+
+st.sidebar.header("System Controls")
+
+if st.sidebar.button("🔄 Reset Fleet (Rebuild 50 EVs)"):
+    for key in ["fleet", "drivers", "stations", "energy_log"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.experimental_rerun()
+
+
 # --------------------------------------------------
 # INITIALIZE STATE
 # --------------------------------------------------
