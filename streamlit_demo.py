@@ -9,6 +9,16 @@ from streamlit_folium import st_folium
 # CONFIG
 # --------------------------------------------------
 st.set_page_config(layout="wide")
+
+st.sidebar.header("System Controls")
+
+if st.sidebar.button("🔄 Reset Fleet (Rebuild 50 EVs)"):
+    for key in ["fleet", "drivers", "stations", "energy_log"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.rerun()
+
+
 st.title("NeeV Salone EV Fleet Management Platform – Live Business Operations")
 
 ENERGY_COST_PER_KWH = 0.25
