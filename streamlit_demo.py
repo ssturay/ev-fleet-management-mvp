@@ -46,14 +46,12 @@ def move_towards(lat, lon, tlat, tlon, step=0.001):
     return lat, lon
 
 # --------------------------------------------------
-# RESET CONTROL
+# RESET
 # --------------------------------------------------
 st.sidebar.header("System Controls")
-
-if st.sidebar.button("🔄 Reset Fleet (Rebuild 50 EVs)"):
-    for key in ["fleet", "drivers", "stations", "energy_log"]:
-        if key in st.session_state:
-            del st.session_state[key]
+if st.sidebar.button("🔄 Reset Fleet"):
+    for k in ["fleet","drivers","stations","energy_log"]:
+        st.session_state.pop(k, None)
     st.rerun()
 
 # --------------------------------------------------
@@ -62,7 +60,6 @@ if st.sidebar.button("🔄 Reset Fleet (Rebuild 50 EVs)"):
 if "fleet" not in st.session_state:
     fleet_data = []
     ev_id = 1
-
     for service, count in SERVICE_FLEET_SIZE.items():
         for _ in range(count):
             fleet_data.append({
@@ -77,7 +74,6 @@ if "fleet" not in st.session_state:
                 "revenue": 0.0
             })
             ev_id += 1
-
     st.session_state.fleet = pd.DataFrame(fleet_data)
 
 if "drivers" not in st.session_state:
@@ -101,24 +97,18 @@ drivers = st.session_state.drivers
 stations = st.session_state.stations
 
 # --------------------------------------------------
-# SIDEBAR – SIMULATION ENGINE
+# SIDEBAR – SIMULATION
 # --------------------------------------------------
 st.sidebar.header("Simulation Engine")
-
-selected_ev = st.sidebar.selectbox("Select EV", fleet["id"].tolist())
-
+selected_ev = st.sidebar.selectbox("Select EV", fleet["id"])
 available_drivers = drivers[drivers.status=="Available"]["id"].tolist()
-selected_driver = st.sidebar.selectbox(
-    "Assign Driver",
-    available_drivers if available_drivers else ["None"]
-)
+selected_driver = st.sidebar.selectbox("Assign Driver", available_drivers if available_drivers else ["None"])
 
-if st.sidebar.button("Assign Driver"):
-    if selected_driver != "None":
-        ev_idx = fleet[fleet.id == selected_ev].index[0]
-        drv_idx = drivers[drivers.id == selected_driver].index[0]
-        fleet.loc[ev_idx, ["driver","status"]] = [selected_driver, "Active"]
-        drivers.loc[drv_idx, "status"] = "Assigned"
+if st.sidebar.button("Assign Driver") and selected_driver != "None":
+    ev_idx = fleet[fleet.id == selected_ev].index[0]
+    drv_idx = drivers[drivers.id == selected_driver].index[0]
+    fleet.loc[ev_idx, ["driver","status"]] = [selected_driver, "Active"]
+    drivers.loc[drv_idx, "status"] = "Assigned"
 
 # --------------------------------------------------
 # SIMULATION STEP
@@ -131,15 +121,10 @@ if st.sidebar.button("▶ Simulate 1 Minute"):
             fleet.loc[i, "battery"] -= drain
 
             rate = SERVICE_RATES[ev.service]
-            fleet.loc[i, "revenue"] += (
-                rate / (24*60) if ev.service == "Daily Rentals" else rate
-            )
+            fleet.loc[i, "revenue"] += rate / (24*60) if ev.service=="Daily Rentals" else rate
 
         if fleet.loc[i,"battery"] < 20 and ev.status not in ["Charging","Moving to Charge"]:
-            nearest = min(
-                stations.itertuples(),
-                key=lambda s: distance(ev.lat, ev.lon, s.lat, s.lon)
-            )
+            nearest = min(stations.itertuples(), key=lambda s: distance(ev.lat, ev.lon, s.lat, s.lon))
             fleet.loc[i, ["station","status"]] = [nearest.id, "Moving to Charge"]
 
         if ev.status == "Moving to Charge":
@@ -153,24 +138,19 @@ if st.sidebar.button("▶ Simulate 1 Minute"):
             fleet.loc[i, "battery"] += 2
             st.session_state.energy_log.append(2/100 * BATTERY_CAPACITY_KWH)
             if fleet.loc[i, "battery"] >= 100:
-                fleet.loc[i, "battery"] = 100
-                fleet.loc[i, ["status","station"]] = ["Idle", None]
+                fleet.loc[i, ["battery","status","station"]] = [100,"Idle",None]
 
 # --------------------------------------------------
 # TABS
 # --------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["🚗 Live Operations", "🔌 Charging & Drivers", "💰 Analytics"])
+tab1, tab2, tab3 = st.tabs(["🚗 Live Operations", "🔌 Charging & Drivers", "📊 Analytics"])
 
 # ---------------- MAP ----------------
 with tab1:
     m = folium.Map(location=[8.48, -13.23], zoom_start=12)
-
     for s in stations.itertuples():
-        folium.Marker(
-            [s.lat,s.lon],
-            popup=s.name,
-            icon=folium.Icon(color="purple",icon="flash",prefix="fa")
-        ).add_to(m)
+        folium.Marker([s.lat,s.lon],popup=s.name,
+            icon=folium.Icon(color="purple",icon="flash",prefix="fa")).add_to(m)
 
     for ev in fleet.itertuples():
         color = "green"
@@ -180,13 +160,7 @@ with tab1:
 
         folium.Marker(
             [ev.lat,ev.lon],
-            popup=f"""
-            <b>{ev.id}</b><br>
-            {ev.service}<br>
-            Status: {ev.status}<br>
-            Battery: {ev.battery:.0f}%<br>
-            Revenue: ${ev.revenue:.2f}
-            """,
+            popup=f"{ev.id}<br>{ev.service}<br>{ev.status}<br>Battery: {ev.battery:.0f}%",
             icon=folium.Icon(color=color,icon="bolt",prefix="fa")
         ).add_to(m)
 
@@ -194,16 +168,11 @@ with tab1:
 
 # ---------------- TABLES ----------------
 with tab2:
-    st.subheader("Fleet")
     st.dataframe(fleet, use_container_width=True)
-
-    st.subheader("Drivers")
     st.dataframe(drivers, use_container_width=True)
-
-    st.subheader("Charging Stations")
     st.dataframe(stations, use_container_width=True)
 
-# ---------------- ANALYTICS ----------------
+# ---------------- ANALYTICS + LIVE CHARTS ----------------
 with tab3:
     total_energy = sum(st.session_state.energy_log)
     total_cost = total_energy * ENERGY_COST_PER_KWH
@@ -211,13 +180,25 @@ with tab3:
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Fleet Size", len(fleet))
-    c2.metric("Active EVs", len(fleet[fleet.status=="Active"]))
-    c3.metric("Charging EVs", len(fleet[fleet.status=="Charging"]))
-    c4.metric("Total Revenue ($)", f"{total_revenue:.2f}")
+    c2.metric("Avg Battery (%)", f"{fleet.battery.mean():.1f}")
+    c3.metric("Active EVs", len(fleet[fleet.status=="Active"]))
+    c4.metric("Revenue ($)", f"{total_revenue:.2f}")
+
+    # ---------- BATTERY DISTRIBUTION ----------
+    st.subheader("🔋 Battery Level Distribution")
+    st.bar_chart(fleet["battery"].value_counts().sort_index())
+
+    # ---------- REVENUE BY SERVICE ----------
+    st.subheader("💰 Revenue by Service")
+    revenue_by_service = fleet.groupby("service")["revenue"].sum()
+    st.bar_chart(revenue_by_service)
+
+    # ---------- UTILIZATION ----------
+    st.subheader("🚗 Fleet Utilization")
+    utilization = fleet["status"].value_counts()
+    st.bar_chart(utilization)
 
     st.metric("Energy Cost ($)", f"{total_cost:.2f}")
-    st.metric("Net Operating Margin ($)", f"{total_revenue-total_cost:.2f}")
+    st.metric("Net Margin ($)", f"{total_revenue-total_cost:.2f}")
 
-    st.success(
-        "50-EV fleet operating across six commercial services with live dispatch, charging, drivers, and financial analytics."
-    )
+    st.success("Live operational intelligence: batteries, revenue, utilization, charging.")
