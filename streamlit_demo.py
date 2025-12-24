@@ -9,16 +9,6 @@ from streamlit_folium import st_folium
 # CONFIG
 # --------------------------------------------------
 st.set_page_config(layout="wide")
-
-st.sidebar.header("System Controls")
-
-if st.sidebar.button("🔄 Reset Fleet (Rebuild 50 EVs)"):
-    for key in ["fleet", "drivers", "stations", "energy_log"]:
-        if key in st.session_state:
-            del st.session_state[key]
-    st.rerun()
-
-
 st.title("NeeV Salone EV Fleet Management Platform – Live Business Operations")
 
 ENERGY_COST_PER_KWH = 0.25
@@ -55,15 +45,16 @@ def move_towards(lat, lon, tlat, tlon, step=0.001):
     lon += step if lon < tlon else -step
     return lat, lon
 
-
+# --------------------------------------------------
+# RESET CONTROL
+# --------------------------------------------------
 st.sidebar.header("System Controls")
 
 if st.sidebar.button("🔄 Reset Fleet (Rebuild 50 EVs)"):
     for key in ["fleet", "drivers", "stations", "energy_log"]:
         if key in st.session_state:
             del st.session_state[key]
-    st.experimental_rerun()
-
+    st.rerun()
 
 # --------------------------------------------------
 # INITIALIZE STATE
@@ -77,13 +68,13 @@ if "fleet" not in st.session_state:
             fleet_data.append({
                 "id": f"EV-{ev_id:02d}",
                 "service": service,
-                "battery": random.randint(40, 90),
+                "battery": random.randint(45, 90),
                 "status": "Idle",
-                "lat": 8.45 + random.uniform(-0.05, 0.05),
-                "lon": -13.25 + random.uniform(-0.05, 0.05),
+                "lat": 8.48 + random.uniform(-0.04, 0.04),
+                "lon": -13.25 + random.uniform(-0.04, 0.04),
                 "station": None,
                 "driver": None,
-                "revenue": 0
+                "revenue": 0.0
             })
             ev_id += 1
 
@@ -110,13 +101,13 @@ drivers = st.session_state.drivers
 stations = st.session_state.stations
 
 # --------------------------------------------------
-# SIDEBAR CONTROLS
+# SIDEBAR – SIMULATION ENGINE
 # --------------------------------------------------
 st.sidebar.header("Simulation Engine")
 
-selected_ev = st.sidebar.selectbox("Select EV", fleet["id"])
-available_drivers = drivers[drivers.status=="Available"]["id"].tolist()
+selected_ev = st.sidebar.selectbox("Select EV", fleet["id"].tolist())
 
+available_drivers = drivers[drivers.status=="Available"]["id"].tolist()
 selected_driver = st.sidebar.selectbox(
     "Assign Driver",
     available_drivers if available_drivers else ["None"]
@@ -132,7 +123,7 @@ if st.sidebar.button("Assign Driver"):
 # --------------------------------------------------
 # SIMULATION STEP
 # --------------------------------------------------
-if st.sidebar.button("Simulate 1 Minute"):
+if st.sidebar.button("▶ Simulate 1 Minute"):
     for i, ev in fleet.iterrows():
 
         if ev.status == "Active":
@@ -170,12 +161,16 @@ if st.sidebar.button("Simulate 1 Minute"):
 # --------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["🚗 Live Operations", "🔌 Charging & Drivers", "💰 Analytics"])
 
+# ---------------- MAP ----------------
 with tab1:
     m = folium.Map(location=[8.48, -13.23], zoom_start=12)
 
     for s in stations.itertuples():
-        folium.Marker([s.lat,s.lon],popup=s.name,
-            icon=folium.Icon(color="purple",icon="flash",prefix="fa")).add_to(m)
+        folium.Marker(
+            [s.lat,s.lon],
+            popup=s.name,
+            icon=folium.Icon(color="purple",icon="flash",prefix="fa")
+        ).add_to(m)
 
     for ev in fleet.itertuples():
         color = "green"
@@ -197,11 +192,18 @@ with tab1:
 
     st_folium(m, width=1100, height=500)
 
+# ---------------- TABLES ----------------
 with tab2:
+    st.subheader("Fleet")
     st.dataframe(fleet, use_container_width=True)
+
+    st.subheader("Drivers")
     st.dataframe(drivers, use_container_width=True)
+
+    st.subheader("Charging Stations")
     st.dataframe(stations, use_container_width=True)
 
+# ---------------- ANALYTICS ----------------
 with tab3:
     total_energy = sum(st.session_state.energy_log)
     total_cost = total_energy * ENERGY_COST_PER_KWH
@@ -214,6 +216,8 @@ with tab3:
     c4.metric("Total Revenue ($)", f"{total_revenue:.2f}")
 
     st.metric("Energy Cost ($)", f"{total_cost:.2f}")
-    st.metric("Net Margin ($)", f"{total_revenue-total_cost:.2f}")
+    st.metric("Net Operating Margin ($)", f"{total_revenue-total_cost:.2f}")
 
-    st.success("50-EV fleet operating across six commercial services with live charging, drivers, and analytics.")
+    st.success(
+        "50-EV fleet operating across six commercial services with live dispatch, charging, drivers, and financial analytics."
+    )
