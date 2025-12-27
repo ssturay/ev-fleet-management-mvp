@@ -106,7 +106,7 @@ stations = st.session_state.stations
 st.sidebar.header("Simulation Engine")
 selected_ev = st.sidebar.selectbox("Select EV", fleet["id"])
 available_drivers = drivers[drivers.status=="Available"]["id"].tolist()
-selected_driver = st.sidebar.selectbox("Assign Driver", available_drivers if available_drivers else ["None"])
+selected_driver = st.sidebar.selectbox("Select Driver", available_drivers if available_drivers else ["None"])
 
 if st.sidebar.button("Assign Driver") and selected_driver != "None":
     ev_idx = fleet[fleet.id == selected_ev].index[0]
